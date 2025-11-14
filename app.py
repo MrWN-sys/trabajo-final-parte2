@@ -176,14 +176,8 @@ def reproduccion_cancion(canciones: list):
                 r += 1
 
 # The main code
-def main(canciones: list[dict], listas: list[str]):
-    # 初始化歌曲列表
+def main():
     plataforma = PlataformaMusical()
-    for cancion in canciones:
-        plataforma.registrar_cancion(cancion['titulo'], cancion['artista'], cancion['duracion'], cancion['genero'], cancion['archivo'])
-    for lista in listas:
-        plataforma.crear_lista(lista)
-    
     while True:
         print('\n=== Plataforma Musical ===')
         print('1) Gestionar canciones')
@@ -202,8 +196,7 @@ def main(canciones: list[dict], listas: list[str]):
             break
         else:
             print('Opción inválida')
-    return ([i.show_infos() for i in plataforma.canciones],[i.nombre for i in plataforma.listas])
             
 
 if __name__ == '__main__':
-    main([], [])
+    main()
