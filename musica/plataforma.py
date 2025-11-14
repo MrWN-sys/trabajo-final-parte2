@@ -11,6 +11,7 @@ class Cancion:
        self.duracion = duracion
        self.genero = genero
        self.archivo = archivo_mp3
+       self.changed = None
 
     def reproducir(self) -> None:
        # 初始化pygame
@@ -30,6 +31,7 @@ class Cancion:
        self.duracion = duracion if duracion else self.duracion
        self.genero = genero if genero else self.genero
        self.archivo = archivo if archivo else self.archivo
+       self.changed = {'titulo': titulo, 'artista': artista, 'duracion': duracion, 'genero': genero, 'archivo_mp3': archivo}
     
     def mostrar_infos(self, sequence=None, normal=True) -> str:
         texto1 = f'{self.titulo} - {self.artista} ({round(float(self.duracion), 1)}s) '
@@ -38,6 +40,14 @@ class Cancion:
             return f'{sequence}) ' + texto1
         else:
             return f'{self.id}) ' + texto1 + texto2
+        
+    def mostrar_data_parte2(self):
+        data = {}
+        keys = ['titulo', 'artista', 'duracion', 'genero', 'archivo_mp3']
+        values = [self.titulo, self.artista, self.duracion, self.genero, self.archivo, self.id]
+        for key, value in zip(keys, values):
+            data[key] = value
+        return data
 
 
 class ListaReproduccion:
@@ -65,10 +75,10 @@ class ListaReproduccion:
 
 
 class PlataformaMusical:
-   def __init__(self):
-       self.canciones = []
-       self.listas = []
-       self.cancion_ids = []
+   def __init__(self, canciones=[], listas=[], cancion_ids=[]):
+       self.canciones = canciones
+       self.listas = listas
+       self.cancion_ids = cancion_ids
 
    def registrar_cancion(self, titulo: str, artista: str, duracion: int, genero: str, archivo:str) -> bool:
         for cancion in self.canciones:
