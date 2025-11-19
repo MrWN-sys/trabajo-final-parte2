@@ -13,19 +13,19 @@ class Servidor:
         self.client_states = {}
         self.lock = threading.Lock()
 
-
     def send_data(self, data: bytes, client):
-        length = len(data)
-        client.sendall(pickle.dumps(length))
+        client.sendall(pickle.dumps(len(data)))
         while data:
             client.sendall(data[:2048])
             data = data[2048:]
-        client.recv(1024)
 
-    def load_service(self):
-        self.service.bind(('127.0.0.1', self.port))
-        self.service.listen()
-   
+    def recv_data(self, client):
+        length = pickle.loads(client.recv(1024))
+        data = b''
+        while len(data) < int(length):
+            data += client.recv(2048)
+        return data
+    
     def check_name_is_using(self, client, name:str):
         with self.lock:
             if self.client_states.get(name, 0):
@@ -36,17 +36,17 @@ class Servidor:
         return True
    
     def transmit_song(self, client, path, name):
-        client.sendall(pickle.dumps('Loading songs...'))
-        print('Begin sending information...')
+        client.sendall(pickle.dumps(True))
+        print(f'Begin sending information to {name}...')
         while True:
             data = pickle.loads(client.recv(2048))
-            print(data)
             if data == 'final':
-                client.sendall(pickle.dumps('Loading songs correctly.'))
-                print('End of sending information.')
+                client.sendall(pickle.dumps(True))
+                print(f'End of sending information to {name}.')
                 break
-            with open(os.path.join(path, f'{data}'), 'rb') as f:
-                data = f.read()
+            with self.lock:
+                with open(os.path.join(path, f'{data}'), 'rb') as f:
+                    data = f.read()
             self.send_data(data, client)
                
     def transmit_data(self, client, dir_path, client_path, name):        
@@ -55,7 +55,6 @@ class Servidor:
         with open(client_path, 'r') as f:
             info = json.loads(f.read())
         self.send_data(pickle.dumps(info), client)
-        print('////////////////')
         self.transmit_song(client, os.path.join(dir_path, 'biblioteca'), name)
 
     def deal_with_old_data(self, old_data: dict, changed:dict):
@@ -65,53 +64,42 @@ class Servidor:
                 value.pop('eliminar')
                 old_data['canciones'][id] = value
             else:
+                path = os.path.join(os.path.dirname(__file__), 'biblioteca', old_data['canciones'][id]['archivo_mp3'].split('\\')[-1])
                 old_data['canciones'].pop(id)
-                path = os.path.join(os.path.dirname(__file__), 'biblioteca', value['titulo'])
                 with self.lock:
-                    os.remove(path + '.mp3')
+                    os.remove(path)
         
         # deal with listas
         for lista in changed['listas']:
             if lista['eliminar']:
                 old_data['listas'].remove(lista['nombre'])
             else:
-                old_data['listas'].append(lista['nombre'])
+                old_data['listas'][lista['nombre']] = lista['canciones']
         return old_data
 
     def receive_data(self, client, name: str, path: str) -> dict: # 接受客户端数据，只需要接受元数据
         client.recv(1024) # 打招呼说明开始
-        print('Begin receiving information...')
-        length = pickle.loads(client.recv(1024))
-        client.sendall(pickle.dumps(True))
-        data = b''
-        while len(data) < int(length):
-            data += client.recv(2048)
-        client.sendall(pickle.dumps('End of receiving information'))
-        data = pickle.loads(data) # receive data -> {'canciones': [{titulo: '', 'eliminar:False}]}
+        print(f'Begin receiving information from {name}...')
+        data = pickle.loads(self.recv_data(client)) # receive data -> {'canciones': [{titulo: '', 'eliminar:False}]}
         with open(path, 'r') as f:
             old_data = json.load(f)
         new_data = self.deal_with_old_data(old_data, data)
         with open(path, 'w') as f:
-            print(new_data)
             json.dump(new_data, f)
         return [value for key, value in old_data['canciones'].items() if key not in new_data['canciones'].keys()]
 
-    def receive_cancion(self, client, canciones: list):
+    def receive_cancion(self, client, canciones: list, name: str):
         client.sendall(pickle.dumps(True))
-        print('Begin receiving canciones')
         # send path
-        print(canciones)
         for i in canciones:
+            print(f'Receiving 《{i["titulo"]}》 from {name}')
             client.sendall(pickle.dumps(i['archivo_mp3']))
-            length = pickle.loads(client.recv(2048))
-            data = b''
-            for i in range(int(length) // 2048 + 1):
-                data += client.recv(2048)
-            with open(os.path.join(os.path.dirname(__file__), 'biblioteca', f'{i["titulo"]}.mp3'), 'wb') as f:
-                f.write(data)
-            client.sendall(pickle.dumps('OK'))
+            data = self.recv_data(client)
+            with self.lock:
+                with open(os.path.join(os.path.dirname(__file__), 'biblioteca', i['archivo_mp3'].split('\\')[-1]), 'wb') as f:
+                    f.write(data)
+                    print(os.path.join(os.path.dirname(__file__), 'biblioteca', i['archivo_mp3'].split('\\')[-1]))
         client.sendall(pickle.dumps(False))
-        print('End of receiving information')
 
     def close_client(self, name: str, client):
         client.close()
@@ -126,12 +114,12 @@ class Servidor:
                 json.dump({'canciones': {}, 'listas': {}}, f)
         self.transmit_data(client, dir_path, client_path, name) # 初始化数据
         canciones_new = self.receive_data(client, name, client_path)
-        self.receive_cancion(client, canciones_new)
+        self.receive_cancion(client, canciones_new, name)
         self.close_client(name, client)
 
-
     def main(self):
-        self.load_service()
+        self.service.bind(('127.0.0.1', self.port))
+        self.service.listen()
         try:
             while True:
                 client, addr = self.service.accept()
@@ -143,7 +131,6 @@ class Servidor:
         except KeyboardInterrupt:
             print('Closing the service...')
         self.service.close()
-
 
 if __name__ == '__main__':
     port = 12345

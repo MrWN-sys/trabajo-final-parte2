@@ -2,7 +2,6 @@ import socket
 import pickle
 import os
 import sys
-import json
 from app import *
 from musica.plataforma import PlataformaMusical, Cancion, ListaReproduccion
 
@@ -17,55 +16,63 @@ class Client:
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.info = None
 
-
     def ask_name(self):
         while True:
             name = input('Name (q to quit): ').strip()
             if name == 'q':
-                print('Leaved correctly.')
+                print('Leave correctly.')
                 exit(0)
             if name:
                 return name
-   
+            
+    def recv_data(self):
+        length = pickle.loads(self.client.recv(1024))
+        data = b''
+        while len(data) < int(length):
+            data += self.client.recv(2048)
+        return data
+    
+    def send_data(self, data):
+        self.client.sendall(pickle.dumps(len(data)))
+        for i in range(len(data) // 2048 + 1):
+            self.client.sendall(data[i * 2048: 2048 * (i + 1)])
+        print(pickle.loads(self.client.recv(1024)))
+
     def iniciar_canciones(self):
         # 接收歌曲数据
         dir_path = os.path.join(os.path.dirname(__file__), 'client_library')
         if not os.path.exists(dir_path):
             os.mkdir(dir_path)
-        print('-----')
-        print(pickle.loads(self.client.recv(1024)))
+        self.client.recv(1024) # True
+        print('Begin loading songs...')
         for cancion in self.info['canciones'].values():
             # 发送歌曲名字.mp3请求获取歌曲数据流
-            self.client.sendall(pickle.dumps(cancion['archivo_mp3'].split('/')[-1]))
-            length = pickle.loads(self.client.recv(1024))
-            data = b''
-            while len(data) < int(length):
-                data += self.client.recv(2048)
-            self.client.sendall(pickle.dumps(True))
-            with open(os.path.join(dir_path, cancion['archivo_mp3'].split('/')[-1]), 'wb') as f:
+            print(f"Loading 《{cancion['titulo']}》 ......")
+            self.client.sendall(pickle.dumps(cancion['archivo_mp3'].split('\\')[-1]))
+            data = self.recv_data()
+            with open(os.path.join(dir_path, cancion['archivo_mp3'].split('\\')[-1]), 'wb') as f:
                 f.write(data)
         self.client.sendall(pickle.dumps('final'))# 打招呼说明结束传输歌曲数据
-        print(pickle.loads(self.client.recv(1024)))
-
+        self.client.recv(1024) # True
+        print('Loading songs correctly.')
 
     def iniciar_information(self):
         # 接收元数据
         print('Initting information...')
         self.client.sendall(pickle.dumps('OK')) # 打招呼说明开始传输数据流
-        length = pickle.loads(self.client.recv(1024))
-        data = b''
-        while len(data) < int(length):
-            data += self.client.recv(2048)
-        self.client.sendall(pickle.dumps(True))
+        data = self.recv_data()
         self.info = pickle.loads(data) # diccionario
     
-    def operate(self) -> PlataformaMusical:
-        canciones = []
+    def operate(self) -> tuple:
+        canciones, listas = [], []
         for id, c in self.info['canciones'].items():
             cancion = Cancion(c['titulo'], c['artista'], int(c['duracion']), c['genero'], c['archivo_mp3'])
             cancion.id = id
             canciones.append(cancion)
-        listas = [ListaReproduccion(i) for i in self.info['listas']]
+        for nombre, c in self.info['listas'].items():
+            lista = ListaReproduccion(nombre)
+            lista.anadir_lista_de_cancion(c)
+            listas.append(lista)
         canciones_ids = [c.id for c in canciones]
         plataforma = PlataformaMusical(canciones.copy(), listas, canciones_ids) # load information to plataforma
         while True:
@@ -85,36 +92,31 @@ class Client:
 
     def send_information(self, plataforma: PlataformaMusical, canciones:list[Cancion], listas:list[ListaReproduccion]): # json information
         # deal with the new informatinon
-
         self.client.sendall(pickle.dumps('OK'))
         print('Saving information...')
         cancion_l = [i for i in canciones if i not in plataforma.canciones] + plataforma.canciones
         lista_l = [i for i in listas if i not in plataforma.listas] + plataforma.listas
         data = {'canciones':{}, 'listas':[]} # data -> {'canciones': {'id': {titulo: '', 'eliminar:False}}}
         for c in cancion_l:
-            if c not in canciones and c in plataforma.canciones:
-                song = c.mostrar_data_parte2()
-                song['eliminar'] = False
-                data['canciones'][c.id] = song
-            elif c in canciones and c not in plataforma.canciones:
-                data['canciones'][c.id] = {'eliminar': True}
-            else:
-                if c.changed:
-                    info = c.changed
+            if c in plataforma.canciones and c not in canciones:
+                if c not in canciones:
+                    info = c.mostrar_data_parte2()
                     info['eliminar'] = False
                     data['canciones'][c.id] = info
+            elif c in canciones and c not in plataforma.canciones:
+                data['canciones'][c.id] = {'eliminar': True}
+            elif c.changed:
+                info = c.changed
+                info['eliminar'] = False
+                data['canciones'][c.id] = info
         
         for l in lista_l:
-            if l not in listas and l in plataforma.listas:
-                data['listas'].append({'nombre': l.nombre, 'eliminar': False})
+            if l not in listas and l in plataforma.listas or l.changed:
+                data['listas'].append({'nombre': l.nombre, 'canciones': l.canciones, 'eliminar': False})
             elif l in listas and l not in plataforma.listas:
                 data['listas'].append({'nombre': l.nombre, 'eliminar': True})
-        data = pickle.dumps(data)
-        self.client.sendall(pickle.dumps(len(data)))
-        self.client.recv(1024)
-        for i in range(len(data) // 2048 + 1):
-            self.client.sendall(data[i * 2048: 2048 * (i + 1)])
-        pickle.loads(self.client.recv(1024))
+
+        self.send_data(pickle.dumps(data))
         print('End of sending information')
 
     def send_canciones(self):
@@ -127,15 +129,10 @@ class Client:
                 break
             with open(path, 'rb') as f:
                 info = f.read()
-            self.client.sendall(pickle.dumps(len(info)))
-            times = len(info) // 2048 + 1
-            for i in range(times):
-                self.client.sendall(info[2048 * i: 2048 * (i + 1)])
-            self.client.recv(1024)
+            self.send_data(info)
         print('End of sending canciones')
 
     def main_client(self):
-
         self.client.connect((self.host, self.port))
         self.client.sendall(pickle.dumps(self.name))
         info = pickle.loads(self.client.recv(1024))
@@ -150,8 +147,7 @@ class Client:
             self.send_information(plataforma, canciones, listas)
             self.send_canciones()
         self.client.close()
-
-
+ 
 if __name__ == '__main__':
     client = Client('127.0.0.1', 12345)
     client.main_client()
