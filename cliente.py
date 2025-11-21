@@ -36,14 +36,12 @@ class Client:
         self.client.sendall(pickle.dumps(len(data)))
         for i in range(len(data) // 2048 + 1):
             self.client.sendall(data[i * 2048: 2048 * (i + 1)])
-        print(pickle.loads(self.client.recv(1024)))
 
     def iniciar_canciones(self):
         # 接收歌曲数据
         dir_path = os.path.join(os.path.dirname(__file__), 'client_library')
         if not os.path.exists(dir_path):
             os.mkdir(dir_path)
-        self.client.recv(1024) # True
         print('Begin loading songs...')
         for cancion in self.info['canciones'].values():
             # 发送歌曲名字.mp3请求获取歌曲数据流
@@ -67,7 +65,7 @@ class Client:
         canciones, listas = [], []
         for id, c in self.info['canciones'].items():
             cancion = Cancion(c['titulo'], c['artista'], int(c['duracion']), c['genero'], c['archivo_mp3'])
-            cancion.id = id
+            cancion.cambia_id(id)
             canciones.append(cancion)
         for nombre, c in self.info['listas'].items():
             lista = ListaReproduccion(nombre)
@@ -88,11 +86,10 @@ class Client:
             else:
                 print('Hasta luego')
                 break
-        return (plataforma, canciones, listas)
+        return plataforma, canciones, listas
 
     def send_information(self, plataforma: PlataformaMusical, canciones:list[Cancion], listas:list[ListaReproduccion]): # json information
         # deal with the new informatinon
-        self.client.sendall(pickle.dumps('OK'))
         print('Saving information...')
         cancion_l = [i for i in canciones if i not in plataforma.canciones] + plataforma.canciones
         lista_l = [i for i in listas if i not in plataforma.listas] + plataforma.listas
@@ -120,7 +117,6 @@ class Client:
         print('End of sending information')
 
     def send_canciones(self):
-        self.client.recv(1024)
         print('Begin sending canciones')
         # begin to send music
         while True:
