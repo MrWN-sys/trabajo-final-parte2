@@ -54,16 +54,19 @@ class ListaReproduccion:
    def __init__(self, nombre:str):
        self.nombre = nombre
        self.canciones = []
+       self.changed = False
 
    def anadir_cancion(self, id_cancion: int) -> bool:
        if id_cancion not in self.canciones:
            self.canciones.append(id_cancion)
+           self.changed = True
            return True
        return False
 
    def quitar_cancion(self, id_cancion: int) -> bool:
        if id_cancion in self.canciones:
            self.canciones.remove(id_cancion)
+           self.changed = True
            return True
        return False
    
@@ -72,6 +75,10 @@ class ListaReproduccion:
    
    def mostrar_cancion(self, canciones: list[Cancion]) -> list[str]:
        return [cancion for cancion in canciones if cancion.id in self.canciones]
+   
+   def anadir_lista_de_cancion(self, lista_ids: list[int]):
+       for id in lista_ids:
+           self.anadir_cancion(id)
 
 
 class PlataformaMusical:
